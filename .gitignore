@@ -1,0 +1,25 @@
+# Environnement virtuel
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Données brutes et modèles entraînés (téléchargés ou régénérés)
+data/raw/
+models/
+
+# Dossiers générés par les outils d'assistance IA
+.claude/
+.cursor/
+.agents/
+.devin/
+
+# Système
+.DS_Store
+Thumbs.db

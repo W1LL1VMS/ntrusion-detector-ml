@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intrusion-detector-ml"
+version = "0.1.0"
+description = "Détection d'intrusion réseau par machine learning sur le jeu de données NSL-KDD"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "joblib",
+]
+
+[project.optional-dependencies]
+app = ["streamlit"]
+dev = ["pytest", "ipykernel"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
