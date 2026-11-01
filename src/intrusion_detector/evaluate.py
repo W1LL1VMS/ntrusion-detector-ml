@@ -4,12 +4,14 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import (
+    accuracy_score,
     classification_report,
     confusion_matrix,
     f1_score,
     make_scorer,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_validate
 
@@ -75,6 +77,30 @@ def family_summary(predictions):
         row["F1 macro"] = report.loc["macro avg", "f1"]
         rows[name] = row
     return pd.DataFrame(rows).T
+
+
+def attack_score(model, X):
+    """Probabilité d'attaque, calculée comme 1 moins la probabilité de la famille « normal »."""
+    probabilities = model.predict_proba(X)
+    return 1 - probabilities[:, list(model.classes_).index("normal")]
+
+
+def binary_metrics_from_families(y_true, y_pred, score=None):
+    """Métriques « normal contre attaque » à partir de prédictions par famille.
+
+    Une connexion est signalée comme attaque dès que la famille prédite n'est pas « normal ».
+    """
+    truth = (pd.Series(y_true).astype(str).to_numpy() != "normal").astype(int)
+    flagged = (pd.Series(y_pred).astype(str).to_numpy() != "normal").astype(int)
+    metrics = {
+        "accuracy": accuracy_score(truth, flagged),
+        "precision": precision_score(truth, flagged, zero_division=0),
+        "recall": recall_score(truth, flagged, zero_division=0),
+        "f1": f1_score(truth, flagged, zero_division=0),
+    }
+    if score is not None:
+        metrics["roc_auc"] = roc_auc_score(truth, score)
+    return metrics
 
 
 def plot_confusion_matrix(y_true, y_pred, labels=CATEGORIES, title="", ax=None):

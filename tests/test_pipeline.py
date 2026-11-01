@@ -7,6 +7,8 @@ import pandas as pd
 from intrusion_detector.data import CATEGORIES, FEATURE_NAMES, split_features_target
 from intrusion_detector.evaluate import (
     BINARY_SCORING,
+    attack_score,
+    binary_metrics_from_families,
     cross_val_predictions,
     cross_validate_binary,
     family_summary,
@@ -133,3 +135,66 @@ def test_family_summary_has_one_row_per_model(sample_df):
     assert summary.loc["parfait", "F1 macro"] == 1.0
     assert summary.loc["naïf", "normal"] == 1.0
     assert summary.loc["naïf", "u2r"] == 0.0
+
+
+def test_final_model_can_be_saved_and_reloaded(sample_df, tmp_path):
+    from intrusion_detector.train import FINAL_MODEL_NAME, load_model, save_model, train_final_model
+
+    X, _ = split_features_target(sample_df)
+    model = train_final_model(sample_df)
+    path = tmp_path / "models" / "final_model.joblib"
+
+    save_model(model, path)
+    reloaded = load_model(path)
+
+    assert FINAL_MODEL_NAME.startswith("Gradient boosting")
+    assert list(reloaded.predict(X)) == list(model.predict(X))
+    assert set(reloaded.classes_) == set(CATEGORIES)
+
+
+def test_loading_a_missing_model_explains_how_to_train_it(tmp_path):
+    import pytest
+
+    from intrusion_detector.train import load_model
+
+    with pytest.raises(FileNotFoundError, match="intrusion_detector.train"):
+        load_model(tmp_path / "absent.joblib")
+
+
+def test_loading_a_model_from_another_sklearn_version_warns(sample_df, tmp_path):
+    import joblib
+    import pytest
+
+    from intrusion_detector.train import load_model, train_final_model
+
+    path = tmp_path / "old_model.joblib"
+    joblib.dump({"model": train_final_model(sample_df), "name": "x", "sklearn_version": "0.0.1"}, path)
+
+    with pytest.warns(UserWarning, match="scikit-learn"):
+        load_model(path)
+
+
+def test_binary_metrics_collapse_families_into_normal_or_attack():
+    y_true = ["normal", "dos", "probe", "r2l"]
+    y_pred = ["normal", "probe", "normal", "r2l"]  # une attaque est ratée, une autre change de famille
+
+    metrics = binary_metrics_from_families(y_true, y_pred)
+
+    assert metrics["accuracy"] == 0.75
+    assert metrics["precision"] == 1.0  # tout ce qui est signalé est bien une attaque
+    assert abs(metrics["recall"] - 2 / 3) < 1e-9
+    assert "roc_auc" not in metrics
+
+
+def test_attack_score_is_one_minus_the_normal_probability(sample_df):
+    from intrusion_detector.train import train_final_model
+
+    X, _ = split_features_target(sample_df)
+    model = train_final_model(sample_df)
+
+    score = attack_score(model, X)
+    normal_probability = model.predict_proba(X)[:, list(model.classes_).index("normal")]
+
+    assert score.shape == (len(X),)
+    assert ((score >= 0) & (score <= 1)).all()
+    assert abs((score + normal_probability) - 1).max() < 1e-9
