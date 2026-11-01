@@ -1,0 +1,99 @@
+import matplotlib
+
+matplotlib.use("Agg")
+
+import pandas as pd
+
+from intrusion_detector.data import CATEGORIES, FEATURE_NAMES, split_features_target
+from intrusion_detector.evaluate import (
+    BINARY_SCORING,
+    cross_val_predictions,
+    cross_validate_binary,
+    per_class_report,
+    plot_confusion_matrix,
+)
+from intrusion_detector.models import baseline_models, make_pipeline
+from intrusion_detector.preprocessing import (
+    DROPPED_FEATURES,
+    USED_NUMERIC_FEATURES,
+    build_preprocessor,
+)
+from sklearn.linear_model import LogisticRegression
+
+
+def test_preprocessor_output_width(sample_df):
+    X, _ = split_features_target(sample_df)
+    preprocessor = build_preprocessor().fit(X)
+
+    transformed = preprocessor.transform(X)
+
+    # variables numériques + 3 protocoles + 4 services + 3 drapeaux
+    assert transformed.shape == (len(X), len(USED_NUMERIC_FEATURES) + 3 + 4 + 3)
+    assert not pd.DataFrame(transformed).isna().any().any()
+
+
+def test_constant_feature_is_dropped(sample_df):
+    X, _ = split_features_target(sample_df)
+    names = build_preprocessor().fit(X).get_feature_names_out()
+
+    for dropped in DROPPED_FEATURES:
+        assert dropped not in names
+
+
+def test_unknown_category_is_ignored_instead_of_failing(sample_df):
+    X, _ = split_features_target(sample_df)
+    preprocessor = build_preprocessor().fit(X)
+
+    new_row = X.iloc[[0]].copy()
+    new_row["service"] = "service_jamais_vu"
+    transformed = pd.DataFrame(preprocessor.transform(new_row), columns=preprocessor.get_feature_names_out())
+
+    service_columns = [name for name in transformed.columns if name.startswith("service_")]
+    assert len(service_columns) == 4
+    assert (transformed[service_columns] == 0).all().all()
+
+
+def test_pipeline_fits_and_predicts(sample_df):
+    X, y = split_features_target(sample_df)
+    pipeline = make_pipeline(LogisticRegression(max_iter=500)).fit(X, y)
+
+    predictions = pipeline.predict(X)
+
+    assert len(predictions) == len(X)
+    assert set(predictions) <= {0, 1}
+
+
+def test_baseline_always_predicts_the_majority_class(sample_df):
+    X, y = split_features_target(sample_df)
+    dummy = baseline_models()["Référence (classe majoritaire)"].fit(X, y)
+
+    assert set(dummy.predict(X)) == {1}  # 40 attaques contre 10 connexions normales
+
+
+def test_cross_validation_reports_every_metric(sample_df):
+    X, y = split_features_target(sample_df)
+    model = make_pipeline(LogisticRegression(max_iter=500))
+
+    table = cross_validate_binary(model, X, y, n_splits=5, n_jobs=1)
+
+    assert list(table.index) == list(BINARY_SCORING)
+    assert list(table.columns) == ["moyenne", "écart-type"]
+    assert table["moyenne"].between(0, 1).all()
+
+
+def test_per_class_report_covers_every_family(sample_df):
+    X, y = split_features_target(sample_df, target="category")
+    model = make_pipeline(LogisticRegression(max_iter=500))
+
+    y_true, y_pred = cross_val_predictions(model, X, y, n_splits=5, n_jobs=1)
+    report = per_class_report(y_true, y_pred)
+
+    assert list(report.index) == CATEGORIES + ["macro avg"]
+    assert report.loc[CATEGORIES, "support"].sum() == len(sample_df)
+
+
+def test_confusion_matrix_plot_runs(sample_df):
+    y_true = sample_df["category"].astype(str)
+    ax = plot_confusion_matrix(y_true, y_true, title="test")
+
+    assert ax.get_title() == "test"
