@@ -9,10 +9,16 @@ from intrusion_detector.evaluate import (
     BINARY_SCORING,
     cross_val_predictions,
     cross_validate_binary,
+    family_summary,
     per_class_report,
     plot_confusion_matrix,
 )
-from intrusion_detector.models import baseline_models, make_pipeline
+from intrusion_detector.models import (
+    BALANCED_SUFFIX,
+    baseline_models,
+    candidate_models,
+    make_pipeline,
+)
 from intrusion_detector.preprocessing import (
     DROPPED_FEATURES,
     USED_NUMERIC_FEATURES,
@@ -97,3 +103,33 @@ def test_confusion_matrix_plot_runs(sample_df):
     ax = plot_confusion_matrix(y_true, y_true, title="test")
 
     assert ax.get_title() == "test"
+
+
+def test_candidate_models_come_with_and_without_class_weights():
+    plain, weighted = candidate_models(), candidate_models(balanced=True)
+
+    assert len(plain) == len(weighted) == 3
+    assert not any(name.endswith(BALANCED_SUFFIX) for name in plain)
+    assert all(name.endswith(BALANCED_SUFFIX) for name in weighted)
+
+
+def test_every_candidate_model_fits_and_predicts(sample_df):
+    X, y = split_features_target(sample_df, target="category")
+    y = y.astype(str)
+
+    for name, model in {**candidate_models(), **candidate_models(balanced=True)}.items():
+        predictions = model.fit(X, y).predict(X)
+        assert len(predictions) == len(X), name
+
+
+def test_family_summary_has_one_row_per_model(sample_df):
+    y = sample_df["category"].astype(str)
+    naive = pd.Series(["normal"] * len(y), index=y.index)
+
+    summary = family_summary({"parfait": (y, y), "naïf": (y, naive)})
+
+    assert list(summary.index) == ["parfait", "naïf"]
+    assert list(summary.columns) == CATEGORIES + ["F1 macro"]
+    assert summary.loc["parfait", "F1 macro"] == 1.0
+    assert summary.loc["naïf", "normal"] == 1.0
+    assert summary.loc["naïf", "u2r"] == 0.0

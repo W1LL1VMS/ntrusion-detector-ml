@@ -63,6 +63,20 @@ def per_class_report(y_true, y_pred, labels=CATEGORIES):
     return table.rename(columns={"f1-score": "f1"})
 
 
+def family_summary(predictions):
+    """Rappel par famille et F1 macro pour plusieurs modèles : une ligne par modèle.
+
+    `predictions` associe le nom d'un modèle à son couple (vraies familles, familles prédites).
+    """
+    rows = {}
+    for name, (y_true, y_pred) in predictions.items():
+        report = per_class_report(y_true, y_pred)
+        row = report.loc[CATEGORIES, "recall"].to_dict()
+        row["F1 macro"] = report.loc["macro avg", "f1"]
+        rows[name] = row
+    return pd.DataFrame(rows).T
+
+
 def plot_confusion_matrix(y_true, y_pred, labels=CATEGORIES, title="", ax=None):
     """Matrice de confusion : chaque ligne montre où vont les connexions d'une vraie famille."""
     labels = list(labels)
